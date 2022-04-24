@@ -8,6 +8,7 @@
  */
 
 #include <win32k.h>
+#include <ddk/immdev.h>
 DBG_DEFAULT_CHANNEL(UserWnd);
 
 INT gNestedWindowLimit = 50;
@@ -121,6 +122,7 @@ PWND FASTCALL ValidateHwndNoErr(HWND hWnd)
 }
 
 /* Temp HACK */
+// Win: ValidateHwnd
 PWND FASTCALL UserGetWindowObject(HWND hWnd)
 {
     PWND Window;
@@ -655,6 +657,17 @@ LRESULT co_UserFreeWindow(PWND Window,
 
       if (Window->head.h == ThreadData->rpdesk->rpwinstaParent->ShellListView)
          ThreadData->rpdesk->rpwinstaParent->ShellListView = NULL;
+   }
+
+   if (ThreadData->spwndDefaultIme &&
+       ThreadData->spwndDefaultIme->spwndOwner == Window)
+   {
+      ThreadData->spwndDefaultIme->spwndOwner = NULL;
+   }
+
+   if (IS_IMM_MODE() && Window == ThreadData->spwndDefaultIme)
+   {
+      UserAssignmentUnlock((PVOID*)&(ThreadData->spwndDefaultIme));
    }
 
    /* Fixes dialog test_focus breakage due to r66237. */
@@ -1263,6 +1276,7 @@ co_IntSetParent(PWND Wnd, PWND WndNewParent)
    return WndOldParent;
 }
 
+// Win: xxxSetParent
 HWND FASTCALL
 co_UserSetParent(HWND hWndChild, HWND hWndNewParent)
 {
@@ -1770,7 +1784,7 @@ PWND FASTCALL IntCreateWindow(CREATESTRUCTW* Cs,
 {
    PWND pWnd = NULL;
    HWND hWnd;
-   PTHREADINFO pti = NULL;
+   PTHREADINFO pti;
    BOOL MenuChanged;
    BOOL bUnicodeWindow;
    PCALLPROCDATA pcpd;
@@ -1866,6 +1880,10 @@ PWND FASTCALL IntCreateWindow(CREATESTRUCTW* Cs,
    pWnd->ExStyle = Cs->dwExStyle;
    pWnd->cbwndExtra = pWnd->pcls->cbwndExtra;
    pWnd->pActCtx = acbiBuffer;
+
+   if (pti->spDefaultImc && Class->atomClassName != gpsi->atomSysClass[ICLS_BUTTON])
+      pWnd->hImc = UserHMGetHandle(pti->spDefaultImc);
+
    pWnd->InternalPos.MaxPos.x  = pWnd->InternalPos.MaxPos.y  = -1;
    pWnd->InternalPos.IconPos.x = pWnd->InternalPos.IconPos.y = -1;
 
@@ -2016,6 +2034,28 @@ PWND FASTCALL IntCreateWindow(CREATESTRUCTW* Cs,
       pWnd->strName.Buffer[WindowName->Length / sizeof(WCHAR)] = L'\0';
       pWnd->strName.Length = WindowName->Length;
       pWnd->strName.MaximumLength = WindowName->Length + sizeof(UNICODE_NULL);
+   }
+
+   /* Create the IME window for pWnd */
+   if (IS_IMM_MODE() && !(pti->spwndDefaultIme) && IntWantImeWindow(pWnd))
+   {
+      PWND pwndDefaultIme = co_IntCreateDefaultImeWindow(pWnd, pWnd->hModule);
+      UserAssignmentLock((PVOID*)&(pti->spwndDefaultIme), pwndDefaultIme);
+
+      if (pwndDefaultIme && (pti->pClientInfo->CI_flags & CI_IMMACTIVATE))
+      {
+         USER_REFERENCE_ENTRY Ref;
+         HKL hKL;
+
+         UserRefObjectCo(pwndDefaultIme, &Ref);
+
+         hKL = pti->KeyboardLayout->hkl;
+         co_IntSendMessage(UserHMGetHandle(pwndDefaultIme), WM_IME_SYSTEM,
+                           IMS_ACTIVATELAYOUT, (LPARAM)hKL);
+         pti->pClientInfo->CI_flags &= ~CI_IMMACTIVATE;
+
+         UserDerefObjectCo(pwndDefaultIme);
+      }
    }
 
    /* Correct the window style. */
@@ -2738,7 +2778,50 @@ cleanup:
    return hwnd;
 }
 
+// Win: xxxDW_DestroyOwnedWindows
+VOID FASTCALL IntDestroyOwnedWindows(PWND Window)
+{
+    HWND* List;
+    HWND* phWnd;
+    PWND pWnd;
+    PTHREADINFO pti = Window->head.pti;
+    USER_REFERENCE_ENTRY Ref;
 
+    List = IntWinListOwnedPopups(Window);
+    if (!List)
+        return;
+
+    for (phWnd = List; *phWnd; ++phWnd)
+    {
+        pWnd = ValidateHwndNoErr(*phWnd);
+        if (pWnd == NULL)
+            continue;
+        ASSERT(pWnd->spwndOwner == Window);
+        ASSERT(pWnd != Window);
+
+        if (IS_IMM_MODE() && !(pti->TIF_flags & TIF_INCLEANUP) &&
+            pWnd == pti->spwndDefaultIme)
+        {
+            continue;
+        }
+
+        pWnd->spwndOwner = NULL;
+        if (IntWndBelongsToThread(pWnd, PsGetCurrentThreadWin32Thread()))
+        {
+            UserRefObjectCo(pWnd, &Ref); // Temp HACK?
+            co_UserDestroyWindow(pWnd);
+            UserDerefObjectCo(pWnd); // Temp HACK?
+        }
+        else
+        {
+            ERR("IntWndBelongsToThread(0x%p) is FALSE, ignoring.\n", pWnd);
+        }
+    }
+
+    ExFreePoolWithTag(List, USERTAG_WINDOWLIST);
+}
+
+// Win: xxxDestroyWindow
 BOOLEAN co_UserDestroyWindow(PVOID Object)
 {
    HWND hWnd;
@@ -2755,7 +2838,7 @@ BOOLEAN co_UserDestroyWindow(PVOID Object)
    TRACE("co_UserDestroyWindow(Window = 0x%p, hWnd = 0x%p)\n", Window, hWnd);
 
    /* Check for owner thread */
-   if ( Window->head.pti != PsGetCurrentThreadWin32Thread())
+   if (Window->head.pti != ti)
    {
        /* Check if we are destroying the desktop window */
        if (! ((Window->head.rpdesk->dwDTFlags & DF_DESTROYED) && Window == Window->head.rpdesk->pDeskInfo->spwnd))
@@ -2866,37 +2949,7 @@ BOOLEAN co_UserDestroyWindow(PVOID Object)
     /* Recursively destroy owned windows */
     if (!(Window->style & WS_CHILD))
     {
-        HWND* List;
-        HWND* phWnd;
-        PWND pWnd;
-
-        List = IntWinListOwnedPopups(Window);
-        if (List)
-        {
-            for (phWnd = List; *phWnd; ++phWnd)
-            {
-                pWnd = ValidateHwndNoErr(*phWnd);
-                if (pWnd == NULL)
-                    continue;
-                ASSERT(pWnd->spwndOwner == Window);
-                ASSERT(pWnd != Window);
-
-                pWnd->spwndOwner = NULL;
-                if (IntWndBelongsToThread(pWnd, PsGetCurrentThreadWin32Thread()))
-                {
-                    USER_REFERENCE_ENTRY Ref;
-                    UserRefObjectCo(pWnd, &Ref); // Temp HACK?
-                    co_UserDestroyWindow(pWnd);
-                    UserDerefObjectCo(pWnd); // Temp HACK?
-                }
-                else
-                {
-                    ERR("IntWndBelongsToThread(0x%p) is FALSE, ignoring.\n", pWnd);
-                }
-            }
-
-            ExFreePoolWithTag(List, USERTAG_WINDOWLIST);
-        }
+        IntDestroyOwnedWindows(Window);
     }
 
     /* Generate mouse move message for the next window */
@@ -2910,6 +2963,22 @@ BOOLEAN co_UserDestroyWindow(PVOID Object)
 
    /* Send destroy messages */
    IntSendDestroyMsg(UserHMGetHandle(Window));
+
+   // Destroy the default IME window if necessary
+   if (IS_IMM_MODE() && !(ti->TIF_flags & TIF_INCLEANUP) &&
+       ti->spwndDefaultIme && !IS_WND_IMELIKE(Window) && !(Window->state & WNDS_DESTROYED))
+   {
+       if (IS_WND_CHILD(Window))
+       {
+           if (IntImeCanDestroyDefIMEforChild(ti->spwndDefaultIme, Window))
+               co_UserDestroyWindow(ti->spwndDefaultIme);
+       }
+       else
+       {
+           if (IntImeCanDestroyDefIME(ti->spwndDefaultIme, Window))
+               co_UserDestroyWindow(ti->spwndDefaultIme);
+       }
+   }
 
    if (!IntIsWindow(UserHMGetHandle(Window)))
    {
