@@ -21,6 +21,9 @@ MultiEnableDriver(
     _In_ ULONG cj,
     _Inout_bytecount_(cj) PDRVENABLEDATA pded);
 
+extern DRVFN gPanDispDrvFn[];
+extern ULONG gPanDispDrvCount;
+
 CODE_SEG("INIT")
 NTSTATUS
 NTAPI
@@ -176,7 +179,7 @@ PDEVOBJ_bEnablePDEV(
     ULONG i;
 
     /* Get the DrvEnablePDEV function */
-    pfnEnablePDEV = ppdev->pldev->pfn.EnablePDEV;
+    pfnEnablePDEV = ppdev->pfn.EnablePDEV;
 
     /* Call the drivers DrvEnablePDEV function */
     TRACE("DrvEnablePDEV(pdevmode %p (%dx%dx%d %d Hz) hdev %p (%S))\n",
@@ -243,7 +246,7 @@ PDEVOBJ_vCompletePDEV(
 {
     /* Call the drivers DrvCompletePDEV function */
     TRACE("DrvCompletePDEV(dhpdev %p hdev %p)\n", ppdev->dhpdev, ppdev);
-    ppdev->pldev->pfn.CompletePDEV(ppdev->dhpdev, (HDEV)ppdev);
+    ppdev->pfn.CompletePDEV(ppdev->dhpdev, (HDEV)ppdev);
 }
 
 static
@@ -298,7 +301,7 @@ PDEVOBJ_vFilterDriverHooks(
     if (dwAccelerationLevel >= 5)
     {
         /* Disable all display accelerations */
-        UNIMPLEMENTED;
+        /* (nothing to do. Already handled in PDEVOBJ_Create) */
     }
 }
 
@@ -314,7 +317,7 @@ PDEVOBJ_pSurface(
     {
         /* Call the drivers DrvEnableSurface */
         TRACE("DrvEnableSurface(dhpdev %p)\n", ppdev->dhpdev);
-        hsurf = ppdev->pldev->pfn.EnableSurface(ppdev->dhpdev);
+        hsurf = ppdev->pfn.EnableSurface(ppdev->dhpdev);
         TRACE("DrvEnableSurface(dhpdev %p) => hsurf %p\n", ppdev->dhpdev, hsurf);
         if (hsurf== NULL)
         {
@@ -379,7 +382,6 @@ PDEVOBJ_vRefreshModeList(
 {
     PGRAPHICS_DEVICE pGraphicsDevice;
     PDEVMODEINFO pdminfo, pdmiNext;
-    PDEVMODEW newDevMode;
 
     /* Lock the PDEV */
     EngAcquireSemaphore(ppdev->hsemDevLock);
@@ -398,12 +400,8 @@ PDEVOBJ_vRefreshModeList(
     ExFreePoolWithTag(pGraphicsDevice->pDevModeList, GDITAG_GDEVICE);
     pGraphicsDevice->pDevModeList = NULL;
 
-    /* Search an available display mode */
-    if (LDEVOBJ_bProbeAndCaptureDevmode(pGraphicsDevice, ppdev->pdmwDev, &newDevMode, TRUE))
-    {
-        ExFreePoolWithTag(ppdev->pdmwDev, GDITAG_DEVMODE);
-        ppdev->pdmwDev = newDevMode;
-    }
+    /* Update available display mode list */
+    LDEVOBJ_bBuildDevmodeList(pGraphicsDevice);
 
     /* Unlock PDEV */
     EngReleaseSemaphore(ppdev->hsemDevLock);
@@ -493,7 +491,7 @@ PDEVOBJ_Create(
         {
             RtlCopyMemory(ppdev->pdmwDev, pdm, pdm->dmSize + pdm->dmDriverExtra);
             /* FIXME: this must be done in a better way */
-            pGraphicsDevice->StateFlags |= DISPLAY_DEVICE_ATTACHED_TO_DESKTOP;
+            pGraphicsDevice->StateFlags |= DISPLAY_DEVICE_PRIMARY_DEVICE | DISPLAY_DEVICE_ATTACHED_TO_DESKTOP;
         }
     }
 
@@ -507,6 +505,27 @@ PDEVOBJ_Create(
     ppdev->pldev = pldev;
     ppdev->dwAccelerationLevel = dwAccelerationLevel;
 
+    /* Copy the function table */
+    if ((ldevtype == LDEV_DEVICE_DISPLAY && dwAccelerationLevel >= 5) ||
+        pdm->dmFields & (DM_PANNINGWIDTH | DM_PANNINGHEIGHT))
+    {
+        ULONG i;
+
+        /* Initialize missing fields */
+        if (!(pdm->dmFields & DM_PANNINGWIDTH))
+            pdm->dmPanningWidth = pdm->dmPelsWidth;
+        if (!(pdm->dmFields & DM_PANNINGHEIGHT))
+            pdm->dmPanningHeight = pdm->dmPelsHeight;
+
+        /* Replace vtable by panning vtable */
+        for (i = 0; i < gPanDispDrvCount; i++)
+            ppdev->apfn[gPanDispDrvFn[i].iFunc] = gPanDispDrvFn[i].pfn;
+    }
+    else
+    {
+        ppdev->pfn = ppdev->pldev->pfn;
+    }
+
     /* Call the driver to enable the PDEV */
     if (!PDEVOBJ_bEnablePDEV(ppdev, pdm, NULL))
     {
@@ -515,9 +534,6 @@ PDEVOBJ_Create(
         EngUnloadImage(pldev);
         return NULL;
     }
-
-    /* Copy the function table */
-    ppdev->pfn = ppdev->pldev->pfn;
 
     /* Tell the driver that the PDEV is ready */
     PDEVOBJ_vCompletePDEV(ppdev);

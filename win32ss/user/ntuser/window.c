@@ -1355,6 +1355,7 @@ IntUnlinkWindow(PWND Wnd)
     Wnd->spwndPrev = Wnd->spwndNext = NULL;
 }
 
+// Win: ExpandWindowList
 BOOL FASTCALL IntGrowHwndList(PWINDOWLIST *ppwl)
 {
     PWINDOWLIST pwlOld, pwlNew;
@@ -1375,6 +1376,7 @@ BOOL FASTCALL IntGrowHwndList(PWINDOWLIST *ppwl)
     return TRUE;
 }
 
+// Win: InternalBuildHwndList
 PWINDOWLIST FASTCALL IntPopulateHwndList(PWINDOWLIST pwl, PWND pwnd, DWORD dwFlags)
 {
     ASSERT(!WL_IS_BAD(pwl));
@@ -1498,21 +1500,23 @@ VOID FASTCALL IntFreeHwndList(PWINDOWLIST pwlTarget)
  * @implemented
  */
 NTSTATUS
-APIENTRY
+NTAPI
 NtUserBuildHwndList(
    HDESK hDesktop,
    HWND hwndParent,
    BOOLEAN bChildren,
    ULONG dwThreadId,
-   ULONG lParam,
-   HWND* pWnd,
-   ULONG* pBufSize)
+   ULONG cHwnd,
+   HWND* phwndList,
+   ULONG* pcHwndNeeded)
 {
    NTSTATUS Status;
    ULONG dwCount = 0;
 
-   if (pBufSize == 0)
-       return ERROR_INVALID_PARAMETER;
+   if (pcHwndNeeded == NULL)
+       return STATUS_INVALID_PARAMETER;
+
+   UserEnterExclusive();
 
    if (hwndParent || !dwThreadId)
    {
@@ -1523,7 +1527,8 @@ NtUserBuildHwndList(
       {
          if(hDesktop == NULL && !(Desktop = IntGetActiveDesktop()))
          {
-            return ERROR_INVALID_HANDLE;
+            Status = STATUS_INVALID_HANDLE;
+            goto Quit;
          }
 
          if(hDesktop)
@@ -1534,7 +1539,8 @@ NtUserBuildHwndList(
                                               &Desktop);
             if(!NT_SUCCESS(Status))
             {
-               return ERROR_INVALID_HANDLE;
+                Status = STATUS_INVALID_HANDLE;
+                goto Quit;
             }
          }
          hwndParent = Desktop->DesktopWindow;
@@ -1554,13 +1560,13 @@ NtUserBuildHwndList(
          {
             if (bGoDown)
             {
-               if(dwCount++ < *pBufSize && pWnd)
+               if (dwCount++ < cHwnd && phwndList)
                {
                   _SEH2_TRY
                   {
-                     ProbeForWrite(pWnd, sizeof(HWND), 1);
-                     *pWnd = Window->head.h;
-                     pWnd++;
+                     ProbeForWrite(phwndList, sizeof(HWND), 1);
+                     *phwndList = Window->head.h;
+                     phwndList++;
                   }
                   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
                   {
@@ -1569,7 +1575,6 @@ NtUserBuildHwndList(
                   _SEH2_END
                   if(!NT_SUCCESS(Status))
                   {
-                     SetLastNtError(Status);
                      break;
                   }
                }
@@ -1610,13 +1615,15 @@ NtUserBuildHwndList(
       if (!NT_SUCCESS(Status))
       {
          ERR("Thread Id is not valid!\n");
-         return ERROR_INVALID_PARAMETER;
+         Status = STATUS_INVALID_PARAMETER;
+         goto Quit;
       }
       if (!(W32Thread = (PTHREADINFO)Thread->Tcb.Win32Thread))
       {
          ObDereferenceObject(Thread);
          TRACE("Tried to enumerate windows of a non gui thread\n");
-         return ERROR_INVALID_PARAMETER;
+         Status = STATUS_INVALID_PARAMETER;
+         goto Quit;
       }
 
      // Do not use Thread link list due to co_UserFreeWindow!!!
@@ -1631,13 +1638,13 @@ NtUserBuildHwndList(
             Window = ValidateHwndNoErr(List[i]);
             if (Window && Window->head.pti == W32Thread)
             {
-               if (dwCount < *pBufSize && pWnd)
+               if (dwCount < cHwnd && phwndList)
                {
                   _SEH2_TRY
                   {
-                     ProbeForWrite(pWnd, sizeof(HWND), 1);
-                     *pWnd = Window->head.h;
-                     pWnd++;
+                     ProbeForWrite(phwndList, sizeof(HWND), 1);
+                     *phwndList = Window->head.h;
+                     phwndList++;
                   }
                   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
                   {
@@ -1647,7 +1654,6 @@ NtUserBuildHwndList(
                   if (!NT_SUCCESS(Status))
                   {
                      ERR("Failure to build window list!\n");
-                     SetLastNtError(Status);
                      break;
                   }
                }
@@ -1660,8 +1666,13 @@ NtUserBuildHwndList(
       ObDereferenceObject(Thread);
    }
 
-   *pBufSize = dwCount;
-   return STATUS_SUCCESS;
+   *pcHwndNeeded = dwCount;
+   Status = STATUS_SUCCESS;
+
+Quit:
+   SetLastNtError(Status);
+   UserLeave();
+   return Status;
 }
 
 static void IntSendParentNotify( PWND pWindow, UINT msg )
