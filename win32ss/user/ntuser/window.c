@@ -2053,17 +2053,22 @@ PWND FASTCALL IntCreateWindow(CREATESTRUCTW* Cs,
       PWND pwndDefaultIme = co_IntCreateDefaultImeWindow(pWnd, pWnd->hModule);
       UserAssignmentLock((PVOID*)&(pti->spwndDefaultIme), pwndDefaultIme);
 
-      if (pwndDefaultIme && (pti->pClientInfo->CI_flags & CI_IMMACTIVATE))
+      if (pwndDefaultIme)
       {
+         HWND hImeWnd;
          USER_REFERENCE_ENTRY Ref;
-         HKL hKL;
-
          UserRefObjectCo(pwndDefaultIme, &Ref);
 
-         hKL = pti->KeyboardLayout->hkl;
-         co_IntSendMessage(UserHMGetHandle(pwndDefaultIme), WM_IME_SYSTEM,
-                           IMS_ACTIVATELAYOUT, (LPARAM)hKL);
-         pti->pClientInfo->CI_flags &= ~CI_IMMACTIVATE;
+         hImeWnd = UserHMGetHandle(pwndDefaultIme);
+
+         co_IntSendMessage(hImeWnd, WM_IME_SYSTEM, IMS_LOADTHREADLAYOUT, 0);
+
+         if (pti->pClientInfo->CI_flags & CI_IMMACTIVATE)
+         {
+            HKL hKL = pti->KeyboardLayout->hkl;
+            co_IntSendMessage(hImeWnd, WM_IME_SYSTEM, IMS_ACTIVATELAYOUT, (LPARAM)hKL);
+            pti->pClientInfo->CI_flags &= ~CI_IMMACTIVATE;
+         }
 
          UserDerefObjectCo(pwndDefaultIme);
       }
@@ -2489,7 +2494,11 @@ co_UserCreateWindowEx(CREATESTRUCTW* Cs,
 
       SwFlag = co_WinPosMinMaximize(Window, SwFlag, &NewPos);
       SwFlag |= SWP_NOZORDER|SWP_FRAMECHANGED; /* Frame always gets changed */
-      if (!(style & WS_VISIBLE) || (style & WS_CHILD) || UserGetActiveWindow()) SwFlag |= SWP_NOACTIVATE;
+      if (!(style & WS_VISIBLE) || (style & WS_CHILD) || UserGetActiveWindow() ||
+          (Window->ExStyle & WS_EX_NOACTIVATE))
+      {
+         SwFlag |= SWP_NOACTIVATE;
+      }
       co_WinPosSetWindowPos(Window, 0, NewPos.left, NewPos.top,
                             NewPos.right, NewPos.bottom, SwFlag);
    }
@@ -3035,7 +3044,7 @@ CLEANUP:
 }
 
 
-static HWND FASTCALL
+HWND FASTCALL
 IntFindWindow(PWND Parent,
               PWND ChildAfter,
               RTL_ATOM ClassAtom,
