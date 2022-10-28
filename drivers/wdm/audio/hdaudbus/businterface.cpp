@@ -363,6 +363,8 @@ HDA_PDOHandleQueryInterface(
         InterfaceHDA->FreeDmaBufferWithNotification = HDA_FreeDmaBufferWithNotification;
         InterfaceHDA->RegisterNotificationEvent = HDA_RegisterNotificationEvent;
         InterfaceHDA->UnregisterNotificationEvent = HDA_UnregisterNotificationEvent;
+
+        return STATUS_SUCCESS;
     }
 
     // FIXME

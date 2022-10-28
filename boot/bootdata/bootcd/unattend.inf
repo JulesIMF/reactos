@@ -4,7 +4,7 @@ Signature = "$ReactOS$"
 ; Set UnattendSetupEnabled to yes in order to get unattended setup working
 ; yes - unattend setup enabled
 ; no - unattend setup disabled
-UnattendSetupEnabled = no
+UnattendSetupEnabled = yes
 
 ; Install to \Device\Harddisk0\Partition1\ReactOS
 DestinationDiskNumber = 0
@@ -16,7 +16,7 @@ InstallationDirectory=ReactOS
 ; MBRInstallType=2  install MBR on hdd
 MBRInstallType=2
 
-FullName="MyName"
+FullName="Jules"
 ;OrgName="MyOrg"
 ComputerName="MYCOMPUTERNAME"
 ;AdminPassword="MyPassword"

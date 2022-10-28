@@ -162,6 +162,45 @@ NTSTATUS InstallSubdevice
     return ntStatus;
 }
 
+
+/*****************************************************************************
+ * ValidateResources
+ *****************************************************************************
+ * This function validates the list of resources for the various functions on
+ * the card.  This code is specific to the adapter.
+ * This function doesn't check the ResourceList parameter and returns
+ * STATUS_SUCCESS when the resources are valid.
+ */
+NTSTATUS ValidateResources
+(
+    IN      PRESOURCELIST   ResourceList    // All resources.
+)
+{
+    PAGED_CODE ();
+
+    DOUT (DBG_PRINT, ("[ValidateResources]"));
+
+    //
+    // Get counts for the types of resources.
+    //
+    ULONG countIO  = ResourceList->NumberOfPorts ();
+    ULONG countIRQ = ResourceList->NumberOfInterrupts ();
+    ULONG countDMA = ResourceList->NumberOfDmas ();
+
+    // validate resources
+    if ((countIO != 2) || (countIRQ != 1) || (countDMA != 0))
+    {
+        DOUT (DBG_ERROR, ("Unknown configuration:\n"
+                          "   IO  count: %d\n"
+                          "   IRQ count: %d\n"
+                          "   DMA count: %d",
+                          countIO, countIRQ, countDMA));
+        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
+
+    return STATUS_SUCCESS;
+}
+
 /*****************************************************************************
  * StartDevice
  *****************************************************************************
@@ -245,7 +284,7 @@ NTSTATUS GZCALL StartDevice
     // KeInitializeEvent(&Event, SynchronizationEvent, 0);
 
     // Call the bus
-    PDEVICE_OBJECT lowerDevice = DeviceExtension->LowerDevice;
+    PDEVICE_OBJECT lowerDevice = ->LowerDevice;
     IoCallDriver (lowerDevice, Irp);
 
 
