@@ -591,7 +591,7 @@ NTSTATUS GZCALL AddDevice
  * This function is called by the operating system when the driver is loaded.
  * All adapter drivers can use this code without change.
  */
-extern "C" DRIVER_INITIALIZE DriverEntry;
+extern "C" DRIVER_INITALIZE DriverEntry;
 extern "C" NTSTATUS GZCALL DriverEntry
 (
     IN PDRIVER_OBJECT   DriverObject,

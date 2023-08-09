@@ -1,0 +1,14 @@
+{ PCFILTER_NODE,          PIN_WAVE_CAPTURE_SOURCE, KSNODE_WAVE_ADC,               1                          },
+  { KSNODE_WAVE_ADC,        0,                       PCFILTER_NODE,                 PIN_WAVE_CAPTURE_SINK      },
+
+  { PCFILTER_NODE,          PIN_WAVE_RENDER_SINK,    KSNODE_WAVE_VOLUME1,           1                          },
+  { KSNODE_WAVE_VOLUME1,    0,                       KSNODE_WAVE_3D_EFFECTS,        1                          },
+  { KSNODE_WAVE_3D_EFFECTS, 0,                       KSNODE_WAVE_SUPERMIX,          1                          },
+  { KSNODE_WAVE_SUPERMIX,   0,                       KSNODE_WAVE_VOLUME2,           1                          },
+  { KSNODE_WAVE_VOLUME2,    0,                       KSNODE_WAVE_SRC,               1                          },
+  { KSNODE_WAVE_SRC,        0,                       KSNODE_WAVE_SUM,               1                          },
+  { KSNODE_WAVE_SUM,        0,                       KSNODE_WAVE_DAC,               1                          },
+  { KSNODE_WAVE_DAC,        0,                       PCFILTER_NODE,                 PIN_WAVE_RENDER_SOURCE     },
+
+  { PCFILTER_NODE,          PIN_WAVE_AC3_RENDER_SINK,KSNODE_WAVE_SPDIF,             1                          },
+  { KSNODE_WAVE_SPDIF,      0,                       PCFILTER_NODE,                 PIN_WAVE_AC3_RENDER_SOURCE },

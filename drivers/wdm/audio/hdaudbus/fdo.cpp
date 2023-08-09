@@ -26,7 +26,7 @@ HDA_InterruptService(
     // Check if this interrupt is ours
     InterruptStatus = READ_REGISTER_ULONG((PULONG)(DeviceExtension->RegBase + HDAC_INTR_STATUS));
 
-    DPRINT1("HDA_InterruptService %lx\n", InterruptStatus);
+    // DPRINT1("HDA_InterruptService %lx\n", InterruptStatus);
     if ((InterruptStatus & INTR_STATUS_GLOBAL) == 0)
         return FALSE;
 
@@ -106,7 +106,7 @@ HDA_DpcForIsr(
         Response = DeviceExtension->RirbBase[DeviceExtension->RirbReadPos].response;
         ResponseFlags = DeviceExtension->RirbBase[DeviceExtension->RirbReadPos].flags;
         Cad = ResponseFlags & RESPONSE_FLAGS_CODEC_MASK;
-        DPRINT1("Response %lx ResponseFlags %lx Cad %lx\n", Response, ResponseFlags, Cad);
+        // DPRINT1("Response %lx ResponseFlags %lx Cad %lx\n", Response, ResponseFlags, Cad);
 
         /* get codec */
         Codec = DeviceExtension->Codecs[Cad];

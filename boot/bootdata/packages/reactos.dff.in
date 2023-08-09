@@ -157,4 +157,6 @@ Signature = "$Windows NT$"
 "modules/optional/vmxnet3n51x86.sys"                  3  optional
 "modules/optional/wine_gecko-2.40-x86.msi"            1  optional
 "boot/bootdata/bootcdregtest/AHKAppTests.cmd"         7  optional
+"modules/optional/hdaudbus.inf"                        6  optional
+"modules/optional/hdaudbus.sys"                        3  optional
 ; DON'T REMOVE THE FOLLOWING NEW LINE ! THIS MEANS YOU !

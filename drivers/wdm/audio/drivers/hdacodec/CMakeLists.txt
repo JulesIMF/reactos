@@ -2,17 +2,8 @@
 list(APPEND SOURCE
     adapter.cpp
     common.cpp
-    mintopo.cpp
-    prophnd.cpp
-    miniport.cpp
-    stream.cpp
-    stream2.cpp
-    rtminiport.cpp
-    rtstream.cpp
-    wavepciminiport.cpp
-    wavepcistream.cpp
-    wavecyclicminiport.cpp
-    wavecyclicstream.cpp)
+    debug.cpp
+    probe.cpp)
 
 add_library(hdacodec MODULE ${SOURCE})
 

@@ -1,11 +1,12 @@
-/********************************************************************************
-**    Copyright (c) 1998-1999 Microsoft Corporation. All Rights Reserved.
-**
-**       Portions Copyright (c) 1998-1999 Intel Corporation
-**
-********************************************************************************/
-
-/* The file debug.h was reviewed by LCA in June 2011 and is acceptable for use by Microsoft. */
+/*
+ * COPYRIGHT:       See COPYING in the top level directory
+ * PROJECT:         ReactOS Intel HD Audio Codecs driver
+ * FILE:            drivers/wdm/audio/drivers/hdacodec/includes/debug.h
+ * PURPOSE:         Debugging functionality.
+ * PROGRAMMER:      Ivan Doroshenko
+ * HISTORY:
+ *                  06 Aug 23   Created
+ */
 
 #ifndef _DEBUG_H_
 #define _DEBUG_H_
@@ -13,6 +14,7 @@
 //
 // Modified version of ksdebug.h to support runtime debug level changes.
 //
+#include <ntdef.h>
 const int DBG_NONE     = 0x00000000;
 const int DBG_PRINT    = 0x00000001; // Blabla. Function entries for example
 const int DBG_WARNING  = 0x00000002; // warning level
@@ -46,12 +48,12 @@ const int DBG_DEFAULT = 0x00000004;  // Errors only.
 //
 #ifdef DEFINE_DEBUG_VARS
 #if (DBG)
-unsigned long ulDebugOut = DBG_ALL;
+unsigned long DebugOutLevel = DBG_ALL;
 #endif
 
 #else // !DEFINED_DEBUG_VARS
 #if (DBG)
-extern unsigned long ulDebugOut;
+extern unsigned long DebugOutLevel;
 #endif
 #endif
 
@@ -68,7 +70,7 @@ extern "C" {
 //
 #if (DBG)
 #define DOUT(lvl, strings)          \
-    if ((lvl) & ulDebugOut)         \
+    if ((lvl) & DebugOutLevel)      \
     {                               \
         DbgPrint(STR_MODULENAME);   \
         DbgPrint  strings;          \
@@ -88,6 +90,10 @@ extern "C" {
 }
 #endif // #if defined(__cplusplus)
 
+PCCH NTAPI
+HDACodecGetFunctionGroupName(IN ULONG Type);
 
+PCCH NTAPI
+HDACodecGetWidgetName(IN ULONG Type);
 
 #endif
